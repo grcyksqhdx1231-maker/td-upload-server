@@ -1,0 +1,11 @@
+# ignore temp recordings
+tmp_recordings/
+uploads/
+
+# ignore node stuff
+node_modules/
+
+# ignore OS junk
+.DS_Store
+Thumbs.db
+
