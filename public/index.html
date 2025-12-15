@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Archive 3000</title>
+<style>
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#0b0b0c; color:#f2f2f2; }
+  .bg { position:fixed; inset:0; background: radial-gradient(1200px 600px at 20% 20%, rgba(255,255,255,.08), transparent 60%),
+                                  radial-gradient(900px 500px at 80% 70%, rgba(255,255,255,.06), transparent 55%); filter: blur(0px); }
+  .wrap { position:relative; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:40px 18px; }
+  .card { width:min(980px, 100%); border:1px solid rgba(255,255,255,.10); border-radius:22px; background: rgba(20,20,22,.70);
+          box-shadow: 0 20px 80px rgba(0,0,0,.55); overflow:hidden; }
+  .topbar { padding:22px 26px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,.08); }
+  .brand { letter-spacing:.22em; text-transform:uppercase; font-weight:700; opacity:.65; font-size:12px; }
+  .content { padding:26px; }
+  .h1 { font-size:34px; font-weight:300; margin: 6px 0 10px; }
+  .sub { opacity:.65; line-height:1.55; margin:0 0 18px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  input { flex:1; min-width:240px; padding:14px 14px; border-radius:14px; border:1px solid rgba(255,255,255,.14);
+          background: rgba(0,0,0,.25); color:#fff; outline:none; }
+  input:focus { border-color: rgba(255,255,255,.35); }
+  button { padding:14px 14px; border-radius:14px; border:1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06);
+           color:#fff; cursor:pointer; transition:.15s; }
+  button:hover { background: rgba(255,255,255,.12); }
+  .ghost { background: transparent; }
+  .ghost:hover { background: rgba(255,255,255,.08); }
+  .divider { height:1px; background: rgba(255,255,255,.08); margin:18px 0; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:14px; }
+  .item { border:1px solid rgba(255,255,255,.10); border-radius:18px; background: rgba(0,0,0,.22); padding:12px; }
+  .meta { font-size:12px; opacity:.70; margin:2px 0 8px; word-break: break-all; }
+  video { width:100%; border-radius:12px; background:#000; }
+  .empty { opacity:.55; padding:20px 0; }
+  .foot { padding:16px 26px; border-top:1px solid rgba(255,255,255,.08); opacity:.45; font-size:12px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="bg"></div>
+
+<div class="wrap">
+  <div class="card">
+    <div class="topbar">
+      <div class="brand">Archive 3000</div>
+      <button id="backBtn" class="ghost" style="display:none;">← 返回</button>
+    </div>
+
+    <div class="content">
+      <!-- LANDING -->
+      <section id="landing">
+        <div class="h1">输入你的名字</div>
+        <p class="sub">输入用户名或关键词（例如用户名 / 动作编号 / 文件名的一部分）。</p>
+        <div class="row">
+          <input id="nameInput" placeholder="例如：sdasdad / 03_1 / 1765103..." />
+          <button id="enterBtn">进入档案</button>
+          <button id="allBtn" class="ghost">查看全部视频</button>
+        </div>
+        <div class="divider"></div>
+        <p class="sub" style="margin:0;">提示：如果你的文件名目前只有时间戳（例如 1765xxx.mp4），你可以直接输入时间戳来搜索。</p>
+      </section>
+
+      <!-- GALLERY -->
+      <section id="gallery" style="display:none;">
+        <div class="h1" id="title">All Archives</div>
+        <p class="sub" id="subtitle">从服务器读取视频列表。</p>
+
+        <div class="row" style="margin: 10px 0 14px;">
+          <input id="searchInput" placeholder="继续搜索（支持模糊匹配）" />
+          <button id="refreshBtn" class="ghost">刷新</button>
+        </div>
+
+        <div id="status" class="empty"></div>
+        <div id="videos" class="grid"></div>
+      </section>
+    </div>
+
+    <div class="foot">© <span id="year"></span> Local Storage System</div>
+  </div>
+</div>
+
+<script>
+  const landing = document.getElementById('landing');
+  const gallery = document.getElementById('gallery');
+  const backBtn = document.getElementById('backBtn');
+
+  const nameInput = document.getElementById('nameInput');
+  const enterBtn = document.getElementById('enterBtn');
+  const allBtn = document.getElementById('allBtn');
+
+  const title = document.getElementById('title');
+  const subtitle = document.getElementById('subtitle');
+  const searchInput = document.getElementById('searchInput');
+  const refreshBtn = document.getElementById('refreshBtn');
+
+  const status = document.getElementById('status');
+  const container = document.getElementById('videos');
+
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  let allFiles = [];
+  let query = "";
+
+  function showLanding() {
+    landing.style.display = "";
+    gallery.style.display = "none";
+    backBtn.style.display = "none";
+    nameInput.value = "";
+    query = "";
+  }
+
+  function showGallery(q) {
+    landing.style.display = "none";
+    gallery.style.display = "";
+    backBtn.style.display = "";
+    query = (q || "").trim();
+    searchInput.value = query;
+
+    if (query) {
+      title.textContent = "Archive for " + query;
+      subtitle.textContent = "只显示文件名包含该关键词的视频（不区分大小写）。";
+    } else {
+      title.textContent = "All Archives";
+      subtitle.textContent = "显示全部视频。";
+    }
+
+    render();
+  }
+
+  async function loadList() {
+    status.textContent = "正在加载视频列表...";
+    container.innerHTML = "";
+    try {
+      const res = await fetch('/list', { cache: 'no-store' });
+      allFiles = await res.json();
+      if (!Array.isArray(allFiles)) allFiles = [];
+      status.textContent = allFiles.length ? "" : "暂无视频。";
+    } catch (e) {
+      status.textContent = "加载失败：请确认服务器在运行。";
+      allFiles = [];
+    }
+  }
+
+  function render() {
+    const q = (searchInput.value || "").trim().toLowerCase();
+    const files = q ? allFiles.filter(f => f.toLowerCase().includes(q)) : allFiles;
+
+    status.textContent = files.length ? "" : (allFiles.length ? "没有匹配的视频。" : "暂无视频。");
+    container.innerHTML = "";
+
+    files.forEach(file => {
+      const div = document.createElement('div');
+      div.className = 'item';
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = file;
+
+      const video = document.createElement('video');
+      video.src = '/videos/' + encodeURIComponent(file);
+      video.controls = true;
+
+      div.appendChild(meta);
+      div.appendChild(video);
+      container.appendChild(div);
+    });
+  }
+
+  enterBtn.addEventListener('click', async () => {
+    await loadList();
+    showGallery(nameInput.value);
+  });
+
+  allBtn.addEventListener('click', async () => {
+    await loadList();
+    showGallery("");
+  });
+
+  backBtn.addEventListener('click', () => showLanding());
+
+  refreshBtn.addEventListener('click', async () => {
+    await loadList();
+    render();
+  });
+
+  searchInput.addEventListener('input', () => render());
+
+  // 首次进入：显示输入名字页
+  showLanding();
+</script>
+</body>
+</html>
