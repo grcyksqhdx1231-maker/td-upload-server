@@ -11,8 +11,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 上传目录（本地 / Railway 都能用）
-const UPLOAD_DIR =
-  process.env.UPLOAD_DIR || path.join(__dirname, "uploads");
+
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -89,9 +88,7 @@ app.get("/files", (req, res) => {
 app.use(express.static(path.join(__dirname, "public")));
 
 // ====== 视频浏览：API + 静态播放 ======
-import fs from "fs";
-import path from "path";
-import express from "express";
+
 
 // 你的 UPLOAD_DIR 如果原来就有，就别重复定义。
 // 这里为了兼容：没有就默认 /app/uploads
