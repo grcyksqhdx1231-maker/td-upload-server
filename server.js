@@ -12,12 +12,18 @@ const app = express();
 // ✅ 只定义一次 PORT（Railway 用 process.env.PORT）
 const PORT = process.env.PORT || 3000;
 
-// ✅ UPLOAD_DIR 必须在任何使用前就定义好
-// Railway 容器里默认写入 /app/uploads（你日志里也看到过）
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
+// ✅ 关键：默认写入 Volume（Railway 常见挂载点是 /data）
+// 你也可以在 Railway Variables 里设置 UPLOAD_DIR 来覆盖
+const UPLOAD_DIR = process.env.UPLOAD_DIR || "/data/uploads";
+
+const BUILD = new Date().toISOString();
 
 // ✅ 确保上传目录存在
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+try {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+} catch (e) {
+  console.error("❌ mkdirSync failed for UPLOAD_DIR =", UPLOAD_DIR, "error =", e);
+}
 
 // ========= 上传状态 =========
 let status = {
@@ -27,6 +33,8 @@ let status = {
   bytesTotal: 0,
   percent: 0,
   message: "",
+  build: BUILD,
+  uploadDir: UPLOAD_DIR,
 };
 
 // 统计上传进度
@@ -69,9 +77,17 @@ app.post("/upload", upload.single("file1"), (req, res) => {
     status.filename = req.file?.originalname || null;
     status.state = "done";
     status.percent = 100;
+
     console.log("📥 uploaded file path =", req.file?.path);
-    console.log("📂 dir listing now =", fs.readdirSync(UPLOAD_DIR));
-    res.json({ ok: true, filename: status.filename });
+
+    // 不要让 readdirSync 的异常导致接口 500
+    try {
+      console.log("📂 dir listing now =", fs.readdirSync(UPLOAD_DIR));
+    } catch (e) {
+      console.log("⚠️ dir listing failed:", String(e));
+    }
+
+    res.json({ ok: true, filename: status.filename, uploadDir: UPLOAD_DIR });
   } catch (e) {
     status.state = "error";
     status.message = String(e);
@@ -84,10 +100,15 @@ app.get("/status", (req, res) => res.json(status));
 
 // ========= 文件列表（旧接口，保留） =========
 app.get("/files", (req, res) => {
-  const files = fs
-    .readdirSync(UPLOAD_DIR)
-    .filter((f) => f.toLowerCase().endsWith(".mp4"));
-  res.json({ files });
+  let files = [];
+  try {
+    files = fs
+      .readdirSync(UPLOAD_DIR)
+      .filter((f) => f.toLowerCase().endsWith(".mp4"));
+  } catch (e) {
+    return res.json({ files: [], error: String(e), uploadDir: UPLOAD_DIR });
+  }
+  res.json({ files, uploadDir: UPLOAD_DIR });
 });
 
 // ====== 视频浏览：API + 静态播放 ======
@@ -112,27 +133,32 @@ function parseFilename(name) {
 }
 
 function listVideos() {
-  if (!fs.existsSync(UPLOAD_DIR)) return [];
-  const files = fs
-    .readdirSync(UPLOAD_DIR)
-    .filter((f) => f.toLowerCase().endsWith(".mp4"));
+  try {
+    if (!fs.existsSync(UPLOAD_DIR)) return [];
+    const files = fs
+      .readdirSync(UPLOAD_DIR)
+      .filter((f) => f.toLowerCase().endsWith(".mp4"));
 
-  const items = files.map((filename) => {
-    const fp = path.join(UPLOAD_DIR, filename);
-    const st = fs.statSync(fp);
-    const meta = parseFilename(filename);
+    const items = files.map((filename) => {
+      const fp = path.join(UPLOAD_DIR, filename);
+      const st = fs.statSync(fp);
+      const meta = parseFilename(filename);
 
-    return {
-      filename,
-      url: `/media/${encodeURIComponent(filename)}`,
-      size: st.size,
-      mtime: st.mtimeMs,
-      ...(meta || { user: "unknown", style: "", skill: "", take: "" }),
-    };
-  });
+      return {
+        filename,
+        url: `/media/${encodeURIComponent(filename)}`,
+        size: st.size,
+        mtime: st.mtimeMs,
+        ...(meta || { user: "unknown", style: "", skill: "", take: "" }),
+      };
+    });
 
-  items.sort((a, b) => b.mtime - a.mtime);
-  return items;
+    items.sort((a, b) => b.mtime - a.mtime);
+    return items;
+  } catch (e) {
+    console.log("⚠️ listVideos failed:", String(e));
+    return [];
+  }
 }
 
 // 全部视频
@@ -144,14 +170,14 @@ app.get("/api/files", (req, res) => {
 app.get("/api/users", (req, res) => {
   const files = listVideos();
   const users = Array.from(new Set(files.map((x) => x.user))).sort();
-  res.json({ ok: true, users });
+  res.json({ ok: true, uploadDir: UPLOAD_DIR, users });
 });
 
 // 某个用户的全部视频
 app.get("/api/user/:name", (req, res) => {
   const name = (req.params.name || "").trim();
   const files = listVideos().filter((x) => x.user === name);
-  res.json({ ok: true, user: name, files });
+  res.json({ ok: true, uploadDir: UPLOAD_DIR, user: name, files });
 });
 
 // ========= 静态网页 =========
@@ -161,4 +187,5 @@ app.use(express.static(path.join(__dirname, "public")));
 app.listen(PORT, "0.0.0.0", () => {
   console.log("✅ Server listening on", PORT);
   console.log("✅ Upload dir:", UPLOAD_DIR);
+  console.log("✅ Build:", BUILD);
 });
