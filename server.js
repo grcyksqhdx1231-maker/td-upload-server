@@ -8,11 +8,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
+// ✅ 只定义一次 PORT（Railway 用 process.env.PORT）
 const PORT = process.env.PORT || 3000;
 
-// 上传目录（本地 / Railway 都能用）
+// ✅ UPLOAD_DIR 必须在任何使用前就定义好
+// Railway 容器里默认写入 /app/uploads（你日志里也看到过）
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
 
-
+// ✅ 确保上传目录存在
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 // ========= 上传状态 =========
@@ -22,7 +26,7 @@ let status = {
   bytesReceived: 0,
   bytesTotal: 0,
   percent: 0,
-  message: ""
+  message: "",
 };
 
 // 统计上传进度
@@ -69,14 +73,14 @@ app.post("/upload", upload.single("file1"), (req, res) => {
   } catch (e) {
     status.state = "error";
     status.message = String(e);
-    res.status(500).json({ ok: false });
+    res.status(500).json({ ok: false, error: String(e) });
   }
 });
 
 // ========= 状态 =========
 app.get("/status", (req, res) => res.json(status));
 
-// 文件列表
+// ========= 文件列表（旧接口，保留） =========
 app.get("/files", (req, res) => {
   const files = fs
     .readdirSync(UPLOAD_DIR)
@@ -84,27 +88,20 @@ app.get("/files", (req, res) => {
   res.json({ files });
 });
 
-// 静态网页
-app.use(express.static(path.join(__dirname, "public")));
-
 // ====== 视频浏览：API + 静态播放 ======
 
-
-// 你的 UPLOAD_DIR 如果原来就有，就别重复定义。
-// 这里为了兼容：没有就默认 /app/uploads
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
-
 // 让浏览器可以直接访问 mp4：/media/xxx.mp4
-app.use("/media", express.static(UPLOAD_DIR, {
-  setHeaders: (res) => {
-    // 允许浏览器播放
-    res.setHeader("Accept-Ranges", "bytes");
-  }
-}));
+app.use(
+  "/media",
+  express.static(UPLOAD_DIR, {
+    setHeaders: (res) => {
+      res.setHeader("Accept-Ranges", "bytes");
+    },
+  })
+);
 
 function parseFilename(name) {
   // 期望：user_style_skill_take.mp4
-  // 例：GRC_middle_10_1.mp4
   const base = name.replace(/\.[^/.]+$/, "");
   const parts = base.split("_");
   if (parts.length < 4) return null;
@@ -114,8 +111,9 @@ function parseFilename(name) {
 
 function listVideos() {
   if (!fs.existsSync(UPLOAD_DIR)) return [];
-  const files = fs.readdirSync(UPLOAD_DIR)
-    .filter(f => f.toLowerCase().endsWith(".mp4"));
+  const files = fs
+    .readdirSync(UPLOAD_DIR)
+    .filter((f) => f.toLowerCase().endsWith(".mp4"));
 
   const items = files.map((filename) => {
     const fp = path.join(UPLOAD_DIR, filename);
@@ -127,11 +125,10 @@ function listVideos() {
       url: `/media/${encodeURIComponent(filename)}`,
       size: st.size,
       mtime: st.mtimeMs,
-      ...(meta || { user: "unknown", style: "", skill: "", take: "" })
+      ...(meta || { user: "unknown", style: "", skill: "", take: "" }),
     };
   });
 
-  // 最新的在前
   items.sort((a, b) => b.mtime - a.mtime);
   return items;
 }
@@ -144,21 +141,22 @@ app.get("/api/files", (req, res) => {
 // 所有用户
 app.get("/api/users", (req, res) => {
   const files = listVideos();
-  const users = Array.from(new Set(files.map(x => x.user))).sort();
+  const users = Array.from(new Set(files.map((x) => x.user))).sort();
   res.json({ ok: true, users });
 });
 
 // 某个用户的全部视频
 app.get("/api/user/:name", (req, res) => {
   const name = (req.params.name || "").trim();
-  const files = listVideos().filter(x => x.user === name);
+  const files = listVideos().filter((x) => x.user === name);
   res.json({ ok: true, user: name, files });
 });
 
+// ========= 静态网页 =========
+app.use(express.static(path.join(__dirname, "public")));
 
-const PORT = process.env.PORT || 3000;
+// ✅ 启动（只出现一次）
 app.listen(PORT, "0.0.0.0", () => {
   console.log("✅ Server listening on", PORT);
   console.log("✅ Upload dir:", UPLOAD_DIR);
 });
-
