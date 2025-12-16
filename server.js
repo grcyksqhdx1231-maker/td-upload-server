@@ -69,6 +69,8 @@ app.post("/upload", upload.single("file1"), (req, res) => {
     status.filename = req.file?.originalname || null;
     status.state = "done";
     status.percent = 100;
+    console.log("📥 uploaded file path =", req.file?.path);
+    console.log("📂 dir listing now =", fs.readdirSync(UPLOAD_DIR));
     res.json({ ok: true, filename: status.filename });
   } catch (e) {
     status.state = "error";
